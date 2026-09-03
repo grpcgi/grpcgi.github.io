@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>grpcgi — HTTP over gRPC for every web app</title>
+<meta name="description" content="grpcgi carries HTTP exchanges over gRPC to an unmodified web application. The app process becomes a gRPC server: identity and mTLS in-process, xDS, health, deadlines, proxyless callers. WebSockets, SSE, and resumable sessions included.">
+<meta property="og:title" content="grpcgi">
+<meta property="og:description" content="Every web app is one hop away from being a first-class gRPC upstream.">
+<meta property="og:url" content="https://grpcgi.github.io/">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #0c1a1e; --panel: #12262b; --panel-2: #183036; --line: #234047;
+    --text: #e6f0ee; --muted: #8aa4a2; --teal: #37c9b8; --teal-dim: #1f7d73;
+    --amber: #f2a65a; --amber-dim: #9a6430; --grey: #5e7370;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f3f7f6; --panel: #ffffff; --panel-2: #e8f0ee; --line: #cad9d6;
+      --text: #10252a; --muted: #56706e; --teal: #0f8f83; --teal-dim: #7cc7bd;
+      --amber: #b5641c; --amber-dim: #e6c39c; --grey: #8a9a98; color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f7f6; --panel: #ffffff; --panel-2: #e8f0ee; --line: #cad9d6;
+    --text: #10252a; --muted: #56706e; --teal: #0f8f83; --teal-dim: #7cc7bd;
+    --amber: #b5641c; --amber-dim: #e6c39c; --grey: #8a9a98; color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; font-size: 17px; line-height: 1.55; }
+  a { color: var(--teal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; letter-spacing: -.015em; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(40px, 6vw, 68px); line-height: 1.02; font-weight: 800; }
+  h2 { font-size: clamp(30px, 4vw, 44px); line-height: 1.08; font-weight: 700; margin-bottom: 18px; }
+  h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .accent { color: var(--teal); } .web { color: var(--amber); } .dim { color: var(--muted); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 72px 0; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: 0; }
+  .eyebrow { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--teal); font-weight: 600; margin-bottom: 14px; }
+  .eyebrow.web { color: var(--amber); }
+  p.lead { font-size: 21px; color: var(--muted); max-width: 40em; margin: 0 0 22px; }
+  p { max-width: 62ch; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  @media (max-width: 860px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; }
+  .tile .t { font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 700; font-size: 19px; margin-bottom: 6px; }
+  .tile .s { color: var(--muted); font-size: 15.5px; }
+  .tile.teal { border-color: var(--teal); } .tile.amber { border-color: var(--amber); }
+  figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; overflow-x: auto; }
+  figure.bare { background: transparent; border: 0; padding: 0; }
+  .diagram { width: 100%; height: auto; display: block; min-width: 640px; color: var(--text); }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 10px; }
+  pre.code { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; font-size: 14.5px; line-height: 1.5; overflow-x: auto; color: var(--text); }
+  pre.code .k { color: var(--teal); } pre.code .c { color: var(--muted); } pre.code .s { color: var(--amber); }
+  ul.points { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  ul.points li { padding-left: 24px; position: relative; }
+  ul.points li::before { content: ""; position: absolute; left: 0; top: .72em; width: 12px; height: 2px; background: var(--teal); }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+  td.mono { font-size: 14px; }
+  .btn { display: inline-block; padding: 12px 20px; border-radius: 10px; font-weight: 600; border: 1px solid var(--teal); color: var(--teal); }
+  .btn.primary { background: var(--teal); color: var(--bg); }
+  .btn:hover { text-decoration: none; filter: brightness(1.08); }
+  .btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .pill { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+  /* nav */
+  nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; gap: 22px; height: 60px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 800; font-size: 20px; }
+  nav .brand img { width: 28px; height: 28px; }
+  nav .links { margin-left: auto; display: flex; gap: 18px; font-size: 15px; align-items: center; }
+  nav .links a { color: var(--muted); } nav .links a:hover { color: var(--text); text-decoration: none; }
+  nav button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  @media (max-width: 700px) { nav .links a.hide-sm { display: none; } }
+  /* hero */
+  .hero { padding: 88px 0 64px; border-top: 0; }
+  .hero .mark { width: 120px; height: 120px; float: right; margin: 0 0 20px 30px; }
+  @media (max-width: 700px) { .hero .mark { display: none; } }
+  .hero h1 { max-width: 15em; margin-bottom: 22px; }
+  footer { border-top: 1px solid var(--line); padding: 36px 0 48px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; }
+  .two-col-text { columns: 2; column-gap: 40px; } @media (max-width: 860px) { .two-col-text { columns: 1; } }
+  .status-table td:first-child { white-space: nowrap; }
+  .d-box { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+  .d-box-teal { fill: var(--panel); stroke: var(--teal); stroke-width: 2; }
+  .d-box-amber { fill: var(--panel); stroke: var(--amber); stroke-width: 2; }
+  .d-box-grey { fill: var(--panel); stroke: var(--grey); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .d-fill-teal { fill: var(--teal); }
+  .d-fill-amber { fill: var(--amber); }
+  .d-fill-grey { fill: var(--grey); }
+  .d-line { stroke: currentColor; stroke-width: 1.5; fill: none; }
+  .d-line-teal { stroke: var(--teal); stroke-width: 2; fill: none; }
+  .d-line-amber { stroke: var(--amber); stroke-width: 2; fill: none; }
+  .d-line-grey { stroke: var(--grey); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+  .d-text { fill: currentColor; font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 13px; }
+  .d-text-b { fill: currentColor; font-family: "Bricolage Grotesque", system-ui, sans-serif; font-size: 15px; font-weight: 700; }
+  .d-text-mono { fill: currentColor; font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+  .d-muted { fill: var(--muted); }
+  .d-teal { fill: var(--teal); }
+  .d-amber { fill: var(--amber); }
+  .d-grey { fill: var(--grey); }
+  .d-boundary { fill: none; stroke: var(--teal); stroke-width: 2; stroke-dasharray: 8 6; }
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="/"><img src="logo/grpcgi-mark-dark.svg" alt="" class="mark-dark"><img src="logo/grpcgi-mark-light.svg" alt="" class="mark-light" hidden>grpcgi</a>
+  <div class="links">
+    <a href="#how" class="hide-sm">How it works</a>
+    <a href="#protocol" class="hide-sm">Protocol</a>
+    <a href="#sessions" class="hide-sm">Sessions</a>
+    <a href="#use">Use it</a>
+    <a href="https://github.com/grpcgi/grpcgi/tree/master/docs/spec">Spec</a>
+    <a href="https://github.com/grpcgi">GitHub</a>
+    <button id="theme" type="button" title="Toggle theme">Theme</button>
+  </div>
+</div></nav>
+
+<section class="hero"><div class="wrap">
+  <img class="mark mark-dark" src="logo/grpcgi-mark-dark.svg" alt="">
+  <img class="mark mark-light" src="logo/grpcgi-mark-light.svg" alt="" hidden>
+  <div class="eyebrow">HTTP over gRPC · v1alpha1</div>
+  <h1>Every web app is one hop away from being a <span class="accent">first-class gRPC upstream</span>.</h1>
+  <p class="lead">grpcgi carries HTTP exchanges over gRPC to an unmodified web application. The application process becomes an ordinary gRPC server, and gets what the gRPC ecosystem gives servers: identity and mTLS terminated in the process, xDS-managed configuration, health, deadlines, telemetry, and proxyless callers. Django, Rails, Express, Spring, a WASI component: anything with an in-process serving interface.</p>
+  <div class="btns">
+    <a class="btn primary" href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/exchange-model.md">Read the exchange model</a>
+    <a class="btn" href="https://github.com/grpcgi/go">Go implementation</a>
+    <a class="btn" href="#use">Use it</a>
+  </div>
+</div></section>
+
+<section id="why"><div class="wrap">
+  <div class="eyebrow">Why</div>
+  <h2>Link gRPC and a service gets all of this. <span class="web">Your web app gets none of it.</span></h2>
+  <p class="lead">A gRPC service is a first-class citizen of the mesh the moment it starts. A web app behind an HTTP proxy is a hostname with a port. grpcgi closes that gap without touching the app.</p>
+  <div class="grid-3">
+    <div class="tile teal"><div class="t">Identity in the process</div><div class="s">The workload's certificate and mTLS terminate inside the process that runs your code, delivered over xDS. No plaintext hop on localhost, no sidecar holding the key.</div></div>
+    <div class="tile teal"><div class="t">xDS configuration</div><div class="s">Listeners, routes, RBAC, and load-balancing policy arrive from the control plane like any proxyless gRPC server. Canary by config, not by redeploy.</div></div>
+    <div class="tile teal"><div class="t">Health and drain</div><div class="s">grpc.health.v1 on the same port. Drain marks NOT_SERVING, sends GOAWAY, and lets in-flight exchanges finish. Zero errors per deploy.</div></div>
+    <div class="tile teal"><div class="t">Deadlines</div><div class="s">The deadline the edge set reaches your request handler as a context timeout, and propagates to every call the handler makes.</div></div>
+    <div class="tile teal"><div class="t">Telemetry</div><div class="s">The same per-RPC metrics, tracing, and channelz your gRPC services already export. One dashboard for the fleet.</div></div>
+    <div class="tile teal"><div class="t">One HTTP parser</div><div class="s">HTTP/1.1 is parsed once, at the edge, by one fuzz-tested implementation. What reaches the app is a typed message that cannot express a malformed header.</div></div>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <div class="eyebrow">How it works</div>
+  <h2>The app process <span class="accent">is</span> a gRPC server</h2>
+  <p class="lead">Browsers arrive at whatever HTTP gateway you already run. The gateway carries each HTTP exchange as one bidirectional gRPC stream to the application, where a thin bridge drives the framework's native interface. gRPC services in the mesh call the same process directly. Real gRPC is never wrapped.</p>
+  <figure><svg class="diagram" viewBox="0 0 1110 340" role="img" aria-label="Browsers arrive through an HTTP gateway; proxyless gRPC client services resolve the application through xDS and call it directly. The gateway that encapsulates HTTP into an HttpBridge.Exchange stream. The application process is one gRPC server exposing HttpBridge, its own gRPC services, health, and xDS-delivered credentials, and drives an unmodified ASGI app">
+        <defs>
+          <marker id="arch-b4t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-teal"/></marker>
+          <marker id="arch-b4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-amber"/></marker>
+          <marker id="arch-b4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        </defs>
+        <!-- callers -->
+        <rect x="20" y="40" width="200" height="64" rx="8" class="d-box"/><text x="120" y="66" text-anchor="middle" class="d-text-b" style="font-size:17px">Browser</text><text x="120" y="88" text-anchor="middle" class="d-text-mono d-muted">HTTP · WebSocket</text>
+        <rect x="290" y="40" width="200" height="64" rx="8" class="d-box"/><text x="390" y="66" text-anchor="middle" class="d-text-b" style="font-size:17px">HTTP gateway</text><text x="390" y="88" text-anchor="middle" class="d-text-mono d-muted">any edge · h1/h2/h3 in</text>
+        <line x1="220" y1="72" x2="288" y2="72" class="d-line" marker-end="url(#arch-b4)"/>
+        <rect x="20" y="140" width="200" height="64" rx="8" class="d-box-teal"/><text x="120" y="166" text-anchor="middle" class="d-text-b d-teal" style="font-size:17px">gRPC service (client)</text><text x="120" y="188" text-anchor="middle" class="d-text-mono d-muted">proxyless · xds:///</text>
+        <!-- xDS -->
+        <rect x="290" y="250" width="200" height="50" rx="8" class="d-box-teal"/><text x="390" y="281" text-anchor="middle" class="d-text-b d-teal" style="font-size:17px">xDS control plane</text>
+        <line x1="290" y1="268" x2="222" y2="200" class="d-line-teal" style="stroke-dasharray: 5 4"/>
+        <line x1="490" y1="275" x2="720" y2="275" class="d-line-teal" style="stroke-dasharray: 5 4" marker-end="url(#arch-b4t)"/>
+        <text x="555" y="264" text-anchor="middle" class="d-text-mono d-teal">certs · listener</text><text x="555" y="296" text-anchor="middle" class="d-text-mono d-teal">RBAC</text>
+        <!-- app process -->
+        <rect x="620" y="20" width="470" height="300" rx="12" class="d-box"/>
+        <text x="855" y="48" text-anchor="middle" class="d-text-b" style="font-size:18px">Application process · one gRPC server · one port</text>
+        <rect x="650" y="70" width="200" height="60" rx="8" class="d-box-amber"/><text x="750" y="95" text-anchor="middle" class="d-text-b d-amber" style="font-size:16px">grpcgi.HttpBridge</text><text x="750" y="116" text-anchor="middle" class="d-text-mono d-muted">Exchange</text>
+        <rect x="650" y="150" width="200" height="60" rx="8" class="d-box-teal"/><text x="750" y="175" text-anchor="middle" class="d-text-b d-teal" style="font-size:16px">your gRPC services</text><text x="750" y="196" text-anchor="middle" class="d-text-mono d-muted">served natively</text>
+        <rect x="650" y="230" width="200" height="60" rx="8" class="d-box-teal"/><text x="750" y="255" text-anchor="middle" class="d-text-b d-teal" style="font-size:16px">grpc.health.v1</text><text x="750" y="276" text-anchor="middle" class="d-text-mono d-muted">SVID · mTLS in-process</text>
+        <line x1="850" y1="100" x2="908" y2="100" class="d-line-amber" marker-end="url(#arch-b4a)"/><text x="879" y="90" text-anchor="middle" class="d-text-mono d-amber">ASGI</text>
+        <rect x="910" y="70" width="150" height="140" rx="8" class="d-box-amber"/><text x="985" y="135" text-anchor="middle" class="d-text-b d-amber" style="font-size:20px">Django</text><text x="985" y="160" text-anchor="middle" class="d-text d-muted">unmodified</text>
+        <!-- arrows in -->
+        <line x1="490" y1="72" x2="648" y2="98" class="d-line-amber" marker-end="url(#arch-b4a)"/><text x="570" y="62" text-anchor="middle" class="d-text-mono d-amber">HttpBridge.Exchange</text>
+        <line x1="220" y1="172" x2="648" y2="180" class="d-line-teal" marker-end="url(#arch-b4t)"/><text x="435" y="160" text-anchor="middle" class="d-text-mono d-teal">native gRPC · mTLS · direct</text>
+      </svg></figure>
+  <div class="grid-2" style="margin-top: 32px;">
+    <div>
+      <h3>One RPC. Everything streams.</h3>
+      <p>The protocol is a single bidirectional streaming RPC, <code>HttpBridge.Exchange</code>. The edge sends a request head, body chunks, and optionally trailers. The application sends informational heads, one final head, body chunks, and optionally trailers. That is the same ladder as HTTP/2 itself. A server-sent-events response is a head followed by chunks for as long as the connection lives, and each application write goes on the wire immediately.</p>
+    </div>
+    <div>
+      <h3>Two channels for errors</h3>
+      <p>The response head is the application's status; the RPC status is the server's. A 503 from your app ends the RPC with OK. UNAVAILABLE from a draining server becomes a 503 at the edge with a retry hint every gRPC client already understands. A panic after the head has been sent becomes INTERNAL, which the edge turns into a stream reset, because lying about a committed status would be worse.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="protocol"><div class="wrap">
+  <div class="eyebrow">Protocol</div>
+  <h2>HPACK's static table, <span class="accent">as field numbers</span></h2>
+  <div class="grid-2">
+    <div>
+      <p>Wrap HTTP headers in a protobuf and you would normally lose HPACK. So well-known header names are dedicated fields, chosen from a frozen table seeded from QPACK's static table: 90 request names, 66 response names. The receiver dispatches on an integer instead of comparing strings, and the name costs one byte. Method, scheme, authority, path, and status are typed fields. Values are bytes, because HTTP field values are bytes. Everything else rides in an overflow list.</p>
+      <ul class="points">
+        <li><b>Frozen.</b> Unassigned numbers in the table range are permanently reserved. New names use <code>headers</code>.</li>
+        <li><b>Validated once.</b> Header names, CRLF, obsolete folds, and Content-Length conflicts are checked at the edge. The schema cannot express a malformed header.</li>
+        <li><b>Flow control is HTTP/2's.</b> The bridge adds no queues. Default chunk 64 KiB, hard maximum 1 MiB.</li>
+        <li><b>Native gRPC passes through.</b> An h2 or h3 request with an <code>application/grpc</code> content type is routed to the app's own services on the same connection, never wrapped.</li>
+        <li><b>Golden vectors.</b> The spec ships byte-exact vectors. The first question for a new implementation is "do you produce these bytes".</li>
+      </ul>
+    </div>
+    <pre class="code"><span class="k">message</span> RequestHead {
+  Method   method    = 1;
+  <span class="k">string</span>   path      = 2;
+  <span class="k">string</span>   authority = 3;
+  Scheme   scheme    = 4;
+  <span class="k">bool</span>     end_of_stream = 5;
+
+  <span class="k">repeated bytes</span> cookie     = 6;
+  <span class="k">repeated bytes</span> user_agent = 7;
+  <span class="k">repeated bytes</span> accept     = 8;
+  <span class="c">// … 90 names. Frozen.</span>
+
+  <span class="k">string</span>   protocol       = 201;  <span class="c">// "websocket"</span>
+  <span class="k">repeated</span> Header headers = 211;
+  <span class="k">bytes</span>    resume_session = 213;
+  <span class="k">uint64</span>   resume_after   = 214;
+}
+
+<span class="k">service</span> HttpBridge {
+  <span class="k">rpc</span> Exchange(<span class="k">stream</span> RequestEvent)
+      <span class="k">returns</span> (<span class="k">stream</span> ResponseEvent);
+}</pre>
+  </div>
+  <figure style="margin-top: 32px;"><svg class="diagram" viewBox="0 0 1110 260" role="img" aria-label="Message ladder between edge and application: RequestHead and body chunks go right; informational and final ResponseHead, body chunks, and optional trailers come back left">
+        <defs>
+          <marker id="ladder-b5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-amber"/></marker>
+          <marker id="ladder-b5t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-teal"/></marker>
+        </defs>
+        <text x="120" y="24" text-anchor="middle" class="d-text-b" style="font-size:18px">Edge</text>
+        <text x="990" y="24" text-anchor="middle" class="d-text-b" style="font-size:18px">Application</text>
+        <line x1="120" y1="40" x2="120" y2="250" class="d-line-grey"/><line x1="990" y1="40" x2="990" y2="250" class="d-line-grey"/>
+        <line x1="128" y1="62" x2="982" y2="62" class="d-line-amber" marker-end="url(#ladder-b5a)"/><text x="555" y="54" text-anchor="middle" class="d-text-mono" style="font-size:15px">RequestHead   method · path · authority · headers</text>
+        <line x1="128" y1="98" x2="982" y2="98" class="d-line-amber" marker-end="url(#ladder-b5a)"/><text x="555" y="90" text-anchor="middle" class="d-text-mono" style="font-size:15px">BodyChunk*   end_of_stream</text>
+        <line x1="982" y1="140" x2="128" y2="140" class="d-line-teal" marker-end="url(#ladder-b5t)"/><text x="555" y="132" text-anchor="middle" class="d-text-mono" style="font-size:15px">ResponseHead   1xx*  then  one final</text>
+        <line x1="982" y1="176" x2="128" y2="176" class="d-line-teal" marker-end="url(#ladder-b5t)"/><text x="555" y="168" text-anchor="middle" class="d-text-mono" style="font-size:15px">BodyChunk*   …for an hour, if it's SSE</text>
+        <line x1="982" y1="212" x2="128" y2="212" class="d-line-teal" marker-end="url(#ladder-b5t)"/><text x="555" y="204" text-anchor="middle" class="d-text-mono" style="font-size:15px">Trailers?</text>
+      </svg><figcaption>The message ladder. Heads carry typed control data and the header table; chunks carry bytes; trailers are optional in both directions.</figcaption></figure>
+</div></section>
+
+<section id="websocket"><div class="wrap">
+  <div class="eyebrow">WebSocket and SSE</div>
+  <h2>A WebSocket is what <span class="accent">one request</span> turns into</h2>
+  <p class="lead">WebSockets get no second protocol. RFC 8441 already says a WebSocket over HTTP/2 is an extended CONNECT, so an HTTP/1.1 upgrade is normalized at the edge into exactly that. The application answers with a normal response head: 2xx accepts, anything else rejects with a real HTTP response. After that the stream carries whole messages, already unmasked, reassembled, and UTF-8 checked. Ping and pong never cross the bridge.</p>
+  <figure><svg class="diagram" viewBox="0 0 1110 316" role="img" aria-label="Sequence diagram with three lifelines: browser, edge, application. The browser sends an HTTP/1.1 GET with Upgrade websocket. The edge sends a RequestHead with method CONNECT and protocol websocket. The application answers a ResponseHead with status 200 and the chosen subprotocol. The edge writes 101 Switching Protocols to the browser and computes Sec-WebSocket-Accept itself. Then WebSocket frames flow between browser and edge while whole WebSocketMessage events flow between edge and application. A close frame from the browser becomes a WebSocketClose event; the application answers with its own close; the edge writes the close frame and the RPC ends OK.">
+        <defs>
+          <marker id="ws-b8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-grey"/></marker>
+          <marker id="ws-b8a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-amber"/></marker>
+          <marker id="ws-b8t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-teal"/></marker>
+        </defs>
+        <text x="120" y="22" text-anchor="middle" class="d-text-b" style="font-size:18px">Browser</text>
+        <text x="555" y="22" text-anchor="middle" class="d-text-b" style="font-size:18px">Edge</text>
+        <text x="990" y="22" text-anchor="middle" class="d-text-b" style="font-size:18px">Application</text>
+        <line x1="120" y1="36" x2="120" y2="310" class="d-line-grey"/><line x1="555" y1="36" x2="555" y2="310" class="d-line-grey"/><line x1="990" y1="36" x2="990" y2="310" class="d-line-grey"/>
+
+        <line x1="128" y1="62" x2="547" y2="62" class="d-line-grey" marker-end="url(#ws-b8)"/>
+        <text x="337" y="54" text-anchor="middle" class="d-text-mono" style="font-size:14px">GET /chat  Upgrade: websocket  Sec-WebSocket-Key: …</text>
+        <line x1="563" y1="100" x2="982" y2="100" class="d-line-amber" marker-end="url(#ws-b8a)"/>
+        <text x="772" y="92" text-anchor="middle" class="d-text-mono d-amber" style="font-size:14px">RequestHead{ CONNECT  protocol: "websocket"  /chat }</text>
+        <text x="772" y="116" text-anchor="middle" class="d-text-mono d-muted" style="font-size:12px">cookie, origin, subprotocols forwarded · key dropped</text>
+        <line x1="982" y1="142" x2="563" y2="142" class="d-line-teal" marker-end="url(#ws-b8t)"/>
+        <text x="772" y="134" text-anchor="middle" class="d-text-mono d-teal" style="font-size:14px">ResponseHead{ status: 200  subprotocol: "chat" }</text>
+        <line x1="547" y1="180" x2="128" y2="180" class="d-line-grey" marker-end="url(#ws-b8)"/>
+        <text x="337" y="172" text-anchor="middle" class="d-text-mono" style="font-size:14px">101 Switching Protocols  Sec-WebSocket-Accept: …</text>
+        <text x="337" y="196" text-anchor="middle" class="d-text-mono d-muted" style="font-size:12px">computed by the edge</text>
+
+        <line x1="128" y1="228" x2="547" y2="228" class="d-line-grey" marker-start="url(#ws-b8)" marker-end="url(#ws-b8)"/>
+        <text x="337" y="220" text-anchor="middle" class="d-text-mono" style="font-size:14px">frames · masked · fragmented · ping/pong</text>
+        <line x1="563" y1="228" x2="982" y2="228" class="d-line-teal" marker-start="url(#ws-b8t)" marker-end="url(#ws-b8t)"/>
+        <text x="772" y="220" text-anchor="middle" class="d-text-mono d-teal" style="font-size:14px">WebSocketMessage{ payload, binary }</text>
+
+        <line x1="128" y1="268" x2="547" y2="268" class="d-line-grey" marker-end="url(#ws-b8)"/>
+        <text x="337" y="260" text-anchor="middle" class="d-text-mono" style="font-size:14px">close frame 1000</text>
+        <line x1="563" y1="268" x2="982" y2="268" class="d-line-amber" marker-end="url(#ws-b8a)"/>
+        <text x="772" y="260" text-anchor="middle" class="d-text-mono d-amber" style="font-size:14px">WebSocketClose{ code: 1000 }</text>
+        <line x1="982" y1="300" x2="563" y2="300" class="d-line-teal" marker-end="url(#ws-b8t)"/>
+        <text x="772" y="292" text-anchor="middle" class="d-text-mono d-teal" style="font-size:14px">WebSocketClose{ code: 1000 }  →  RPC ends OK</text>
+        <line x1="547" y1="300" x2="128" y2="300" class="d-line-grey" marker-end="url(#ws-b8)"/>
+        <text x="337" y="292" text-anchor="middle" class="d-text-mono" style="font-size:14px">close frame 1000</text>
+      </svg></figure>
+  <div class="grid-2" style="margin-top: 32px;">
+    <div>
+      <h3>Server-sent events are a response that hasn't ended yet</h3>
+      <p>A 200 head with <code>text/event-stream</code>, then one body chunk per write, for as long as the handler keeps writing. There is no buffer anywhere on the path and no idle timer to fight. When the browser leaves, the edge cancels the RPC and the handler's context is done. Last-Event-ID is just a header.</p>
+    </div>
+    <div>
+      <h3>From the handler's seat</h3>
+      <p>In Go the request arrives as an ordinary GET with an Upgrade header, so routing and middleware see nothing unusual. Accept it and read and write whole messages. In ASGI, <code>websocket.accept</code>, <code>websocket.receive</code>, and <code>websocket.send</code> map one to one. The bridge between the protocol and the framework is a lookup table, not a state machine.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="sessions"><div class="wrap">
+  <div class="eyebrow">Sessions</div>
+  <h2>Sessions that <span class="accent">outlive</span> the connection</h2>
+  <p class="lead">A WebSocket or an event stream normally pins a client to one process for hours. Deploys kill it, drains wait on it, and load balancing happens per connection. grpcgi decouples the two: the client's socket terminates at the edge, and the exchange behind it can end and start again on any instance without the client noticing.</p>
+  <figure><svg class="diagram" viewBox="0 0 1110 330" role="img" aria-label="Sequence diagram with four lifelines: client, edge, backend A, backend B. The client opens a WebSocket. The edge opens exchange 1 to backend A, which accepts with a head carrying session key s-8f2a and a 30 second TTL. Backend A sends 41 messages, which the edge forwards and counts. Backend A starts draining, sends a Detach event with retry_after 0 and ends the RPC OK; the edge keeps the client's socket open. The edge opens exchange 2 to backend B with resume_session s-8f2a and resume_after 41. Backend B answers 200 and sends message 42 onward. The client sees a continuous stream.">
+        <defs>
+          <marker id="drain-b10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-grey"/></marker>
+          <marker id="drain-b10a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-amber"/></marker>
+          <marker id="drain-b10t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-teal"/></marker>
+        </defs>
+        <text x="90" y="22" text-anchor="middle" class="d-text-b" style="font-size:18px">Client</text>
+        <text x="420" y="22" text-anchor="middle" class="d-text-b" style="font-size:18px">Edge</text>
+        <text x="760" y="22" text-anchor="middle" class="d-text-b" style="font-size:18px">Backend A</text>
+        <text x="1040" y="22" text-anchor="middle" class="d-text-b" style="font-size:18px">Backend B</text>
+        <line x1="90" y1="36" x2="90" y2="324" class="d-line-grey"/><line x1="420" y1="36" x2="420" y2="324" class="d-line-grey"/><line x1="760" y1="36" x2="760" y2="200" class="d-line-grey"/><line x1="1040" y1="36" x2="1040" y2="324" class="d-line-grey"/>
+
+        <line x1="98" y1="60" x2="412" y2="60" class="d-line-grey" marker-end="url(#drain-b10)"/>
+        <text x="255" y="52" text-anchor="middle" class="d-text-mono" style="font-size:13px">WebSocket open</text>
+        <line x1="428" y1="60" x2="752" y2="60" class="d-line-amber" marker-end="url(#drain-b10a)"/>
+        <text x="590" y="52" text-anchor="middle" class="d-text-mono d-amber" style="font-size:13px">Exchange #1  CONNECT websocket</text>
+        <line x1="752" y1="96" x2="428" y2="96" class="d-line-teal" marker-end="url(#drain-b10t)"/>
+        <text x="590" y="88" text-anchor="middle" class="d-text-mono d-teal" style="font-size:13px">ResponseHead{ 200  session: "s-8f2a" }</text>
+        <line x1="412" y1="96" x2="98" y2="96" class="d-line-grey" marker-end="url(#drain-b10)"/>
+        <text x="255" y="88" text-anchor="middle" class="d-text-mono" style="font-size:13px">101</text>
+
+        <line x1="752" y1="134" x2="428" y2="134" class="d-line-teal" marker-end="url(#drain-b10t)"/>
+        <text x="590" y="126" text-anchor="middle" class="d-text-mono d-teal" style="font-size:13px">WebSocketMessage × 41</text>
+        <line x1="412" y1="134" x2="98" y2="134" class="d-line-grey" marker-end="url(#drain-b10)"/>
+        <text x="255" y="126" text-anchor="middle" class="d-text-mono" style="font-size:13px">frames × 41</text>
+        <text x="590" y="156" text-anchor="middle" class="d-text-mono d-muted" style="font-size:12px">edge counts: delivered 41</text>
+
+        <line x1="752" y1="182" x2="428" y2="182" class="d-line-teal" marker-end="url(#drain-b10t)"/>
+        <text x="590" y="174" text-anchor="middle" class="d-text-mono d-teal" style="font-size:13px">Detach{ retry_after: 0 }  →  RPC ends OK</text>
+        <text x="760" y="212" text-anchor="middle" class="d-text-mono d-muted" style="font-size:12px">gone</text>
+        <text x="255" y="174" text-anchor="middle" class="d-text-mono d-muted" style="font-size:13px">socket stays open · nothing happens</text>
+
+        <line x1="428" y1="236" x2="1032" y2="236" class="d-line-amber" marker-end="url(#drain-b10a)"/>
+        <text x="730" y="228" text-anchor="middle" class="d-text-mono d-amber" style="font-size:13px">Exchange #2  resume_session: "s-8f2a"  resume_after: 41</text>
+        <line x1="1032" y1="272" x2="428" y2="272" class="d-line-teal" marker-end="url(#drain-b10t)"/>
+        <text x="730" y="264" text-anchor="middle" class="d-text-mono d-teal" style="font-size:13px">ResponseHead{ 200 }   headers not forwarded, the client has them</text>
+
+        <line x1="1032" y1="308" x2="428" y2="308" class="d-line-teal" marker-end="url(#drain-b10t)"/>
+        <text x="730" y="300" text-anchor="middle" class="d-text-mono d-teal" style="font-size:13px">WebSocketMessage #42, #43, …</text>
+        <line x1="412" y1="308" x2="98" y2="308" class="d-line-grey" marker-end="url(#drain-b10)"/>
+        <text x="255" y="300" text-anchor="middle" class="d-text-mono" style="font-size:13px">frame #42, #43, …</text>
+      </svg><figcaption>A drain. Backend A sends <code>Detach</code> and ends the RPC; the edge keeps the client's socket and resumes on backend B with the session key and the delivered count.</figcaption></figure>
+  <div class="grid-2" style="margin-top: 32px;">
+    <ul class="points">
+      <li><b>Opt in.</b> The application puts a session key on the final head. No key, no change: the exchange lives exactly as long as the connection.</li>
+      <li><b>Detach.</b> Only the application lets go. It sends <code>Detach</code> and ends the RPC. <code>retry_after</code> 0 is a drain: resume now, elsewhere. 30 s means the session is idle: come back later, and the backend can scale to zero in between. An exchange the edge cancels still means the client went away.</li>
+      <li><b>Resume.</b> The edge re-sends the request head with <code>resume_session</code> and <code>resume_after</code>: messages delivered for a WebSocket, bytes for a body. The application replays from there, or answers 410 if it no longer knows the key. Where session state lives is the application's business, as it is today.</li>
+    </ul>
+    <pre class="code"><span class="c">// Go</span>
+<span class="k">func</span> chat(w http.ResponseWriter, r *http.Request) {
+  key, after, resumed := grpcgi.Resume(r)
+  <span class="k">if</span> !resumed {
+    key = newSessionKey()
+    grpcgi.SetSession(w, key, 30*time.Second)
+  }
+  ws, _ := grpcgi.AcceptWebSocket(w, r, <span class="s">"chat.v1"</span>, <span class="k">nil</span>)
+  <span class="k">for</span> msg := <span class="k">range</span> room.After(key, after) {
+    ws.WriteText(msg)
+    <span class="k">if</span> draining() { ws.Detach(0); <span class="k">return</span> }
+  }
+}</pre>
+  </div>
+</div></section>
+
+<section id="prior"><div class="wrap">
+  <div class="eyebrow">Prior art</div>
+  <h2>API gateways already turn HTTP into gRPC. <span class="accent">grpcgi extends that to the whole app.</span></h2>
+  <p class="lead">Transcoding maps a JSON route onto a method you described in proto, and it is the right tool for an API. For a first-class API you would rather have clients call the gRPC endpoint directly. grpcgi covers the rest of the web app: pages, forms, uploads, WebSockets, event streams. Same gateway, same mesh. A complement, not a replacement.</p>
+  <figure><svg class="diagram" viewBox="0 0 1110 300" role="img" aria-label="Two rows. Top, transcoding today: a JSON client sends GET /v1/users/42 to an API gateway, whose transcoder maps the route to the UserService.GetUser method using HTTP annotations in the proto, and calls a gRPC service. Bottom, grpcgi: a browser sends pages, forms, a WebSocket upgrade, or an event stream to the same gateway, which carries the whole HTTP exchange as the message of one HttpBridge.Exchange call to a web app such as Django, Rails, or Express.">
+        <defs>
+          <marker id="prior-b12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-grey"/></marker>
+          <marker id="prior-b12t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-teal"/></marker>
+          <marker id="prior-b12a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-fill-amber"/></marker>
+        </defs>
+        <text x="30" y="24" class="d-text-b d-grey" style="font-size:16px">Transcoding · for APIs · since 2017</text>
+        <rect x="30" y="40" width="220" height="70" rx="8" class="d-box-grey"/>
+        <text x="140" y="70" text-anchor="middle" class="d-text-b d-grey" style="font-size:16px">JSON client</text>
+        <text x="140" y="94" text-anchor="middle" class="d-text-mono d-muted" style="font-size:13px">GET /v1/users/42</text>
+        <line x1="252" y1="75" x2="388" y2="75" class="d-line-grey" marker-end="url(#prior-b12)"/>
+        <rect x="390" y="40" width="260" height="70" rx="8" class="d-box-grey"/>
+        <text x="520" y="70" text-anchor="middle" class="d-text-b d-grey" style="font-size:16px">API gateway · transcoder</text>
+        <text x="520" y="94" text-anchor="middle" class="d-text-mono d-muted" style="font-size:12px">route → method · http annotations</text>
+        <line x1="652" y1="75" x2="828" y2="75" class="d-line-teal" marker-end="url(#prior-b12t)"/>
+        <text x="740" y="64" text-anchor="middle" class="d-text-mono d-teal" style="font-size:13px">UserService.GetUser</text>
+        <rect x="830" y="40" width="250" height="70" rx="8" class="d-box-teal"/>
+        <text x="955" y="70" text-anchor="middle" class="d-text-b d-teal" style="font-size:16px">gRPC service</text>
+        <text x="955" y="94" text-anchor="middle" class="d-text-mono d-muted" style="font-size:13px">one method per route</text>
+
+        <text x="555" y="152" text-anchor="middle" class="d-text d-muted" style="font-size:15px">same edge · same mesh · the only change is what the message is</text>
+
+        <text x="30" y="194" class="d-text-b d-teal" style="font-size:16px">grpcgi · for everything else</text>
+        <rect x="30" y="210" width="220" height="70" rx="8" class="d-box"/>
+        <text x="140" y="240" text-anchor="middle" class="d-text-b" style="font-size:16px">Browser</text>
+        <text x="140" y="264" text-anchor="middle" class="d-text-mono d-muted" style="font-size:13px">pages · forms · WebSocket · SSE</text>
+        <line x1="252" y1="245" x2="388" y2="245" class="d-line-grey" marker-end="url(#prior-b12)"/>
+        <rect x="390" y="210" width="260" height="70" rx="8" class="d-box-teal"/>
+        <text x="520" y="240" text-anchor="middle" class="d-text-b d-teal" style="font-size:16px">same gateway</text>
+        <text x="520" y="264" text-anchor="middle" class="d-text-mono d-muted" style="font-size:12px">the exchange is the message</text>
+        <line x1="652" y1="245" x2="828" y2="245" class="d-line-amber" marker-end="url(#prior-b12a)"/>
+        <text x="740" y="234" text-anchor="middle" class="d-text-mono d-amber" style="font-size:13px">HttpBridge.Exchange</text>
+        <rect x="830" y="210" width="250" height="70" rx="8" class="d-box-amber"/>
+        <text x="955" y="240" text-anchor="middle" class="d-text-b d-amber" style="font-size:16px">web app</text>
+        <text x="955" y="264" text-anchor="middle" class="d-text-mono d-muted" style="font-size:13px">Django · Rails · Express · …</text>
+      </svg></figure>
+  <div class="two-col-text" style="margin-top: 32px;">
+    <p>None of this is new. CGI in 1993 said the web server handles HTTP and the application gets a structured request. FastCGI, AJP, and uwsgi refined it. Around 2010 the industry went back to proxying HTTP/1.1 to app servers because it was simpler.</p>
+    <p>Google went the other way. Inside Google the front ends terminate HTTP and speak Stubby, the ancestor of gRPC, to every backend; the request travels as a protocol buffer. You can see the fossils in public: <code>google/rpc/http.proto</code>, and App Engine's runtime protocol, which is literally an HttpRequest message inside an RPC. grpcgi is that idea, rebuilt on protobuf and gRPC for everyone: the control-data split from Binary HTTP, WebSockets from RFC 8441, the header table from QPACK, status translation from google.rpc.Code, the ladder from HTTP/2.</p>
+  </div>
+</div></section>
+
+<section id="django"><div class="wrap">
+  <div class="eyebrow web">The application</div>
+  <h2>A Django request, <span class="dim">then</span> and <span class="accent">now</span></h2>
+  <figure><svg class="diagram" viewBox="0 0 1110 448" role="img" aria-label="Two vertical request stacks. Left, the usual one: browser, nginx ingress terminating TLS and parsing HTTP/1.1, then a pod holding two processes: a sidecar proxy where mTLS ends and HTTP is parsed again before a plaintext localhost hop, and the application process running uvicorn or gunicorn, which parses HTTP a third time, then ASGI, then Django. Right, with grpcgi: browser, a gateway that parses HTTP once and opens an Exchange, then one process holding the gRPC server with mTLS, xDS, HTTP/2 and deadlines, the grpcgi bridge, ASGI, and Django unchanged.">
+        <defs><marker id="django-b11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <text x="155" y="24" text-anchor="middle" class="d-text-b d-grey" style="font-size:17px">Then</text>
+        <text x="695" y="24" text-anchor="middle" class="d-text-b d-teal" style="font-size:17px">Now</text>
+        <rect x="50" y="40" width="210" height="42" rx="7" class="d-box"/>
+        <text x="155" y="67" text-anchor="middle" class="d-text-b " style="font-size:15px">Browser</text>
+<line x1="155" y1="82" x2="155" y2="92" class="d-line-grey" marker-end="url(#django-b11)"/>
+<rect x="50" y="94" width="210" height="42" rx="7" class="d-box-grey"/>
+        <text x="155" y="121" text-anchor="middle" class="d-text-b d-grey" style="font-size:15px">nginx ingress</text>
+        <text x="296" y="121" class="d-text-mono d-muted" style="font-size:12px">TLS · parse HTTP/1.1 #1</text>
+<line x1="155" y1="136" x2="155" y2="174" class="d-line-grey" marker-end="url(#django-b11)"/>
+<rect x="28" y="150" width="254" height="276" rx="10" class="d-box" style="stroke-dasharray:6 5"/>
+<text x="38" y="166" class="d-text-mono d-muted" style="font-size:11px">pod</text>
+<rect x="50" y="176" width="210" height="42" rx="7" class="d-box-grey"/>
+        <text x="155" y="203" text-anchor="middle" class="d-text-b d-grey" style="font-size:15px">sidecar proxy</text>
+        <text x="296" y="203" class="d-text-mono d-muted" style="font-size:12px">mTLS ends · parse #2 · localhost</text>
+<line x1="155" y1="218" x2="155" y2="254" class="d-line-grey" marker-end="url(#django-b11)"/>
+<rect x="38" y="232" width="234" height="184" rx="8" class="d-box"/>
+<text x="48" y="247" class="d-text-mono d-muted" style="font-size:11px">process</text>
+<rect x="50" y="256" width="210" height="42" rx="7" class="d-box-grey"/>
+        <text x="155" y="283" text-anchor="middle" class="d-text-b d-grey" style="font-size:15px">uvicorn / gunicorn</text>
+        <text x="296" y="283" class="d-text-mono d-muted" style="font-size:12px">parse #3 · h11 · websockets</text>
+<line x1="155" y1="298" x2="155" y2="308" class="d-line-grey" marker-end="url(#django-b11)"/>
+<rect x="50" y="310" width="210" height="42" rx="7" class="d-box-grey"/>
+        <text x="155" y="337" text-anchor="middle" class="d-text-b d-grey" style="font-size:15px">ASGI</text>
+        <text x="296" y="337" class="d-text-mono d-muted" style="font-size:12px">scope · receive · send</text>
+<line x1="155" y1="352" x2="155" y2="362" class="d-line-grey" marker-end="url(#django-b11)"/>
+<rect x="50" y="364" width="210" height="42" rx="7" class="d-box-amber"/>
+        <text x="155" y="391" text-anchor="middle" class="d-text-b d-amber" style="font-size:15px">Django</text>
+        <text x="296" y="391" class="d-text-mono d-muted" style="font-size:12px">unchanged</text>
+        <rect x="590" y="40" width="210" height="42" rx="7" class="d-box"/>
+        <text x="695" y="67" text-anchor="middle" class="d-text-b " style="font-size:15px">Browser</text>
+<line x1="695" y1="82" x2="695" y2="92" class="d-line-teal" marker-end="url(#django-b11)"/>
+<rect x="590" y="94" width="210" height="42" rx="7" class="d-box-teal"/>
+        <text x="695" y="121" text-anchor="middle" class="d-text-b d-teal" style="font-size:15px">gateway</text>
+        <text x="836" y="121" class="d-text-mono d-muted" style="font-size:12px">parse HTTP once · Exchange →</text>
+<line x1="695" y1="136" x2="695" y2="174" class="d-line-teal" marker-end="url(#django-b11)"/>
+<rect x="568" y="150" width="254" height="276" rx="10" class="d-box-teal"/>
+<text x="578" y="166" class="d-text-mono d-teal" style="font-size:11px">one process · one port</text>
+<rect x="590" y="176" width="210" height="42" rx="7" class="d-box-teal"/>
+        <text x="695" y="203" text-anchor="middle" class="d-text-b d-teal" style="font-size:15px">grpc server</text>
+        <text x="836" y="203" class="d-text-mono d-muted" style="font-size:12px">mTLS · xDS · HTTP/2 · deadlines</text>
+<line x1="695" y1="218" x2="695" y2="254" class="d-line-teal" marker-end="url(#django-b11)"/>
+<rect x="590" y="256" width="210" height="42" rx="7" class="d-box-teal"/>
+        <text x="695" y="283" text-anchor="middle" class="d-text-b d-teal" style="font-size:15px">grpcgi bridge</text>
+        <text x="836" y="283" class="d-text-mono d-muted" style="font-size:12px">head → scope · write → chunk</text>
+<line x1="695" y1="298" x2="695" y2="308" class="d-line-teal" marker-end="url(#django-b11)"/>
+<rect x="590" y="310" width="210" height="42" rx="7" class="d-box-teal"/>
+        <text x="695" y="337" text-anchor="middle" class="d-text-b d-teal" style="font-size:15px">ASGI</text>
+        <text x="836" y="337" class="d-text-mono d-muted" style="font-size:12px">scope · receive · send</text>
+<line x1="695" y1="352" x2="695" y2="362" class="d-line-teal" marker-end="url(#django-b11)"/>
+<rect x="590" y="364" width="210" height="42" rx="7" class="d-box-amber"/>
+        <text x="695" y="391" text-anchor="middle" class="d-text-b d-amber" style="font-size:15px">Django</text>
+        <text x="836" y="391" class="d-text-mono d-muted" style="font-size:12px">unchanged</text>
+        <text x="290" y="442" text-anchor="middle" class="d-text-mono d-muted" style="font-size:13px">3 parsers · 2 proxies · 2 processes · identity ends at the sidecar</text>
+        <text x="830" y="442" text-anchor="middle" class="d-text-mono d-teal" style="font-size:13px">1 parser · no per-pod proxy · 1 process · identity inside it</text>
+      </svg></figure>
+</div></section>
+
+<section id="use"><div class="wrap">
+  <div class="eyebrow web">Use it</div>
+  <h2>There is <span class="web">no step three</span></h2>
+  <div class="grid-2">
+    <div>
+      <pre class="code"><span class="c">// Go · any net/http handler</span>
+<span class="k">import</span> <span class="s">"github.com/grpcgi/go"</span>
+
+srv := grpc.NewServer(grpc.Creds(xdsCreds))
+grpcgi.Register(srv, mux)
+healthpb.RegisterHealthServer(srv, hs)
+srv.Serve(lis)</pre>
+      <p style="margin-top: 14px;">The Go module <a href="https://github.com/grpcgi/go">github.com/grpcgi/go</a> serves any <code>http.Handler</code> from a <code>grpc.Server</code>: chi, gin, gorilla/mux, or your own. It includes a message-oriented WebSocket API, sessions, and an <code>http.RoundTripper</code> that calls a bridge back over gRPC with no proxy, so tests run end to end in-process.</p>
+    </div>
+    <div>
+      <h3>Every ecosystem has the same shape</h3>
+      <p>Headers plus a body stream in, headers plus a body stream out. Each bridge is a thin adapter over the same messages, and the golden vectors keep every port honest. The spec maps the exchange model onto each interface.</p>
+      <table>
+        <tr><th>Interface</th><th>Status</th></tr>
+        <tr><td><code>net/http</code>.Handler</td><td>Go, v1alpha1, with WebSockets and sessions</td></tr>
+        <tr><td>ASGI · WSGI</td><td>Mapping specified; Python bridge being brought to v1alpha1</td></tr>
+        <tr><td><code>fetch</code>(Request) · Rack · Servlet · <code>wasi:http</code> · PSR-7</td><td>Mapping specified; implementations welcome</td></tr>
+      </table>
+    </div>
+  </div>
+</div></section>
+
+<section id="status"><div class="wrap">
+  <div class="eyebrow">Status</div>
+  <h2>Built to be <span class="accent">implemented</span></h2>
+  <div class="grid-2">
+    <div>
+      <p>The schema is <code>grpcgi.v1alpha1</code>: stable enough to implement against, and it will not be called <code>v1</code> until two independent implementations pass the conformance suite. The frozen header table is generated from one source of truth, and the golden vectors are produced by <code>protoc --encode</code> so there is nothing to argue about.</p>
+      <p>Read the <a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/exchange-model.md">exchange model</a> first, then the <a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/grpc-binding.md">gRPC binding</a>. Try it, break it, bring your framework.</p>
+    </div>
+    <table class="status-table">
+      <tr><th>Document</th><th>What</th></tr>
+      <tr><td><a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/exchange-model.md">exchange-model.md</a></td><td>Grammar, heads, tunnels and WebSocket, sessions, cancellation, flow control, errors, conformance</td></tr>
+      <tr><td><a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/grpc-binding.md">grpc-binding.md</a></td><td>Service, metadata, status translation, native gRPC passthrough, limits, health and drain, Envoy as upstream</td></tr>
+      <tr><td><a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/schema.md">schema.md</a></td><td>Message set, control data, the frozen table, extensibility, versioning</td></tr>
+      <tr><td><a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/header-table.md">header-table.md</a></td><td>Every dedicated header field and its number</td></tr>
+      <tr><td><a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/mappings.md">mappings.md</a></td><td>ASGI, WSGI, WASI HTTP, Fetch, Rack, Servlet</td></tr>
+      <tr><td><a href="https://github.com/grpcgi/grpcgi/blob/master/docs/spec/vectors/vectors.md">vectors.md</a></td><td>Golden vectors, byte for byte</td></tr>
+      <tr><td><a href="https://github.com/grpcgi/grpcgi/blob/master/proto/grpcgi/v1alpha1">proto/</a></td><td><code>exchange.proto</code>, <code>bridge.proto</code></td></tr>
+    </table>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <span><b>grpcgi</b> · <a href="https://github.com/grpcgi">github.com/grpcgi</a></span>
+  <span>Mehrdad Afshari · Signeen Inc.</span>
+  <span class="pill">v1alpha1</span>
+</div></footer>
+
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : !window.matchMedia('(prefers-color-scheme: light)').matches; }
+  function paint() {
+    var dark = isDark();
+    document.querySelectorAll('.mark-dark').forEach(function (e) { e.hidden = !dark; });
+    document.querySelectorAll('.mark-light').forEach(function (e) { e.hidden = dark; });
+  }
+  try { var saved = localStorage.getItem('grpcgi-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () {
+    var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next);
+    try { localStorage.setItem('grpcgi-theme', next); } catch (e) {}
+    paint();
+  });
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', paint);
+  paint();
+})();
+</script>
+</body>
+</html>

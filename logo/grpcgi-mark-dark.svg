@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="hop" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#f2a65a"/>
+      <stop offset="1" stop-color="#37c9b8"/>
+    </linearGradient>
+  </defs>
+  <!-- the mesh: three gRPC services -->
+  <g stroke="#37c9b8" stroke-width="14" stroke-linecap="round" fill="none">
+    <line x1="318" y1="194" x2="396" y2="116"/>
+    <line x1="318" y1="194" x2="414" y2="262"/>
+    <line x1="396" y1="116" x2="414" y2="262"/>
+  </g>
+  <!-- the one hop: web app onto the mesh -->
+  <line x1="156" y1="356" x2="318" y2="194" stroke="url(#hop)" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="396" cy="116" r="26" fill="#37c9b8"/>
+  <circle cx="414" cy="262" r="26" fill="#37c9b8"/>
+  <circle cx="318" cy="194" r="46" fill="#37c9b8"/>
+  <!-- the web app -->
+  <rect x="98" y="298" width="116" height="116" rx="30" fill="#f2a65a"/>
+</svg>

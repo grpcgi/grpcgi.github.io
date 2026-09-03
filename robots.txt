@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://grpcgi.github.io/sitemap.xml
